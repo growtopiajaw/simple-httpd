@@ -10,8 +10,10 @@ If you're looking for a full featured or even just more capable web server, take
 
 ## Features
 
-* HTTP2 with Let's Encrypt integration for automatic TLS if enabled
-* Automatic self signed certificate generation and use if enabled
+* HTTP2 with [Let's Encrypt](https://letsencrypt.org/) integration for automatic TLS, if enabled.
+* Automatic self signed certificate generation and use, if enabled.
+* Multiple language support: English, Italian, Spanish, Irish. ISO 639-1 are given on the CLI.
+
 Certificates are cached in `${HOME}/.autocert` for reuse.
 
 ## Installation
@@ -27,6 +29,43 @@ or, on BSD
 ```
 gmake install
 ```
+
+### Examples
+
+HTTP/1.1 on default port (8000)
+
+```
+simple-httpd
+```
+
+HTTP/1.1 on the given port
+
+```
+simple-httpd -p 8181
+```
+
+HTTP/2 with Let's Encrypt on the default port
+
+```
+simple-httpd -l some.valid.domain
+```
+
+The port assignment is for the HTTP server.  The TLS port will be 8081 and both will respond to requests.
+
+```
+simple-httpd -p 8080 -t some.valid.domain
+```
+
+Generate a self signed certificate and run the server
+
+```
+simple-httpd -g
+```
+
+Run server in Spanish
+
+```
+simple-httpd -l es
 
 ### Downloads
  Check our [releases](https://github.com/GrowtopiaJaw/simple-httpd/releases) section.
@@ -68,3 +107,8 @@ gmake install
 | [simple-httpd-openbsd-amd64](https://github.com/GrowtopiaJaw/simple-httpd/releases/download/v0.2.1/simple-httpd-openbsd-amd64) | 0.2.1 | OpenBSD x86_64 64-bit | b6a4119d11e77bfa879818ee1535ae09f74d7b81 |
 | [simple-httpd-openbsd-arm64](https://github.com/GrowtopiaJaw/simple-httpd/releases/download/v0.2.1/simple-httpd-openbsd-arm64) | 0.2.1 | OpenBSD ARM 64-bit | 913426dba514aec05ede6c3db4cba64999993797 |
 | [simple-httpd-openbsd-armv6](https://github.com/GrowtopiaJaw/simple-httpd/releases/download/v0.2.1/simple-httpd-openbsd-armv6) | 0.2.1 | OpenBSD ARM 32-bit armv6 | 34c345e68dbe9e904f66155
+
+## Contributions
+
+* File Issue with details of the problem, feature request, etc.
+* Submit a pull request and include details of what problem or feature the code is solving or implementing.

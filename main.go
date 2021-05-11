@@ -2,12 +2,11 @@ package main
 
 import (
 	"crypto/tls"
-	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
 	"io"
-	"log"
 	"mime"
 	"net/http"
 	"net/url"
@@ -20,12 +19,17 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"golang.org/x/crypto/acme/autocert"
 )
 
-const version = "0.2.1"
-const name = "simple-httpd"
-const pathSeperator = "/"
+var (
+	name    string
+	version string
+	// gitSHA is populated at build time from
+	// `-ldflags "-X main.gitSHA=$(shell git rev-parse HEAD)"`
+	gitSHA string
+)
 
 var indexHTMLFiles = []string{
 	"index.html",
@@ -36,13 +40,15 @@ const (
 	cert    = "cert.pem"
 	key     = "key.pem"
 	certDir = ".autocert"
+
+	pathSeperator = "/"
+
+	defaultPort = 8000
 )
 
-// gitSHA is populated at build time from
-// `-ldflags "-X main.gitSHA=$(shell git rev-parse HEAD)"`
-var gitSHA string
+var directoryText string
 
-// Data holds the data passed to the template engine
+// Data holds the data passed to the template engine.
 type Data struct {
 	Name         string
 	LastModified string
@@ -50,7 +56,7 @@ type Data struct {
 	Size         int64
 }
 
-// httpServer holds the relavent info/state
+// httpServer holds the relavent info/state.
 type httpServer struct {
 	Directory string
 	Port      int
@@ -59,29 +65,7 @@ type httpServer struct {
 	template  *template.Template
 }
 
-// requestData holds data about the request for logging
-type requestData struct {
-	Timestamp   string `json:"timestamp,omitempty"`
-	Method      string `json:"method,omitempty"`
-	HTTPVersion string `json:"http_version,omitempty"`
-	RemoteAddr  string `json:"remote_addr,omitempty"`
-	Path        string `json:"path,omitempty"`
-	Status      int    `json:"status,omitempty"`
-	UserAgent   string `json:"user_agent,omitempty"`
-	Error       string `json:"error,omitempty,omitempty"`
-}
-
-func (r requestData) Format(f fmt.State, c rune) {
-	switch c {
-	case 'v', 's':
-		enc := json.NewEncoder(f)
-		if err := enc.Encode(r); err != nil {
-			log.Println(err)
-		}
-	}
-}
-
-// setHeaders sets the base headers for all requests
+// setHeaders sets the base headers for all requests.
 func setHeaders(w http.ResponseWriter) {
 	w.Header().Set("Server", name+pathSeperator+version)
 	w.Header().Add("Date", time.Now().Format(time.RFC822))
@@ -98,7 +82,7 @@ func isIndexFile(file string) bool {
 	return false
 }
 
-// ServeHTTP handles inbound requests
+// ServeHTTP handles inbound requests.
 func (h *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if h.HTTPS && req.TLS == nil {
 		url := "https://" + strings.Split(req.Host, ":")[0]
@@ -106,29 +90,25 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			url = url + ":" + strconv.FormatInt(int64(h.TLSPort), 10)
 		}
 		url += req.URL.String()
-		http.Redirect(w, req, url, 302)
+		http.Redirect(w, req, url, http.StatusFound)
 		return
 	}
 	defer func() {
 		if err := recover(); err != nil {
 			http.Error(w, fmt.Sprintln(err), http.StatusInternalServerError)
-			log.Printf("recovering from error: %s\n", err)
+			log.Error("msg", zap.Error(fmt.Errorf("recovering from error: %s", err)))
 		}
 	}()
 
-	rd := requestData{
-		Timestamp:  time.Now().Format("2006-01-02 15:04:05"),
-		RemoteAddr: req.RemoteAddr,
-		Method:     req.Method,
-		Path:       req.RequestURI,
-		UserAgent:  req.UserAgent(),
-	}
-
 	parsedURL, err := url.Parse(req.RequestURI)
 	if err != nil {
-		rd.Error = err.Error()
-		rd.Status = http.StatusInternalServerError
-		fmt.Println(rd)
+		log.Error("msg",
+			zap.String("method", req.Method),
+			zap.String("remote_addr", req.RemoteAddr),
+			zap.String("path", req.RequestURI),
+			zap.String("user_agent", req.UserAgent()),
+			zap.Int("status", http.StatusInternalServerError),
+			zap.Error(err))
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -144,9 +124,13 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	file, err := os.Open(fullpath)
 	if err != nil {
-		rd.Error = err.Error()
-		rd.Status = http.StatusNotFound
-		fmt.Println(rd)
+		log.Error("msg",
+			zap.String("method", req.Method),
+			zap.String("remote_addr", req.RemoteAddr),
+			zap.String("path", req.RequestURI),
+			zap.String("user_agent", req.UserAgent()),
+			zap.Int("status", http.StatusInternalServerError),
+			zap.Error(err))
 		http.NotFound(w, req)
 		return
 	}
@@ -154,9 +138,13 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	stat, err := file.Stat()
 	if err != nil {
-		rd.Error = err.Error()
-		rd.Status = http.StatusInternalServerError
-		fmt.Println(rd)
+		log.Error("msg",
+			zap.String("method", req.Method),
+			zap.String("remote_addr", req.RemoteAddr),
+			zap.String("path", req.RequestURI),
+			zap.String("user_agent", req.UserAgent()),
+			zap.Int("status", http.StatusInternalServerError),
+			zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -167,16 +155,24 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		if escapedPath[len(escapedPath)-1] != '/' {
 			// Redirect all directory requests to ensure they end with a slash
 			http.Redirect(w, req, escapedPath+"/", http.StatusFound)
-			rd.Status = http.StatusFound
-			fmt.Println(rd)
+			log.Error("msg",
+				zap.String("method", req.Method),
+				zap.String("remote_addr", req.RemoteAddr),
+				zap.String("path", req.RequestURI),
+				zap.String("user_agent", req.UserAgent()),
+				zap.Int("status", http.StatusFound))
 			return
 		}
 
 		contents, err := file.Readdir(-1)
 		if err != nil {
-			rd.Status = http.StatusInternalServerError
-			rd.Error = err.Error()
-			fmt.Println(rd)
+			log.Error("msg",
+				zap.String("method", req.Method),
+				zap.String("remote_addr", req.RemoteAddr),
+				zap.String("path", req.RequestURI),
+				zap.String("user_agent", req.UserAgent()),
+				zap.Int("status", http.StatusInternalServerError),
+				zap.Error(err))
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -189,47 +185,58 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 				hf, err := os.Open(filepath.Join(fullpath, entry.Name()))
 				if err != nil {
-					fmt.Println(err)
+					log.Error("msg", zap.Error(err))
 					return
 				}
 				if _, err := io.Copy(w, hf); err != nil {
-					fmt.Println(err)
+					log.Error("msg", zap.Error(err))
 					return
 				}
 
-				rd.Status = http.StatusOK
-				fmt.Println(rd)
+				log.Info("request",
+					zap.String("method", req.Method),
+					zap.String("remote_addr", req.RemoteAddr),
+					zap.String("path", req.RequestURI),
+					zap.String("user_agent", req.UserAgent()),
+					zap.Int("status", http.StatusOK))
 				return
 			}
 			file := Data{
 				Name:         entry.Name(),
 				LastModified: entry.ModTime().Format(time.RFC1123),
 				URI:          path.Join(escapedPath, entry.Name()),
+				Size:         entry.Size(),
 			}
 			if entry.IsDir() {
 				file.Name = entry.Name() + pathSeperator
-				file.Size = entry.Size()
 			}
 			files = append(files, file)
 		}
-
-		rd.Status = http.StatusOK
 
 		w.Header().Set("Content-type", "text/html; charset=UTF-8")
 
 		if err := h.template.Execute(w, map[string]interface{}{
 			"files":           files,
-			"version":         gitSHA,
+			"gitSha":          gitSHA,
+			"version":         version,
 			"port":            h.Port,
-			"relativePath":    escapedPath,
+			"relativePath":    fullpath,
 			"goVersion":       runtime.Version(),
+			"lang":            lang,
+			"name":            name,
+			"directoryText":   directoryText,
 			"parentDirectory": path.Clean(escapedPath + "/.."),
 		}); err != nil {
-			fmt.Println(err)
+			log.Error("msg", zap.Error(err))
 			return
 		}
 
-		fmt.Println(rd)
+		log.Info("request",
+			zap.String("method", req.Method),
+			zap.String("remote_addr", req.RemoteAddr),
+			zap.String("path", req.RequestURI),
+			zap.String("user_agent", req.UserAgent()),
+			zap.Int("status", http.StatusOK))
 		return
 	}
 
@@ -240,63 +247,85 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if _, err := io.Copy(w, file); err != nil {
-		fmt.Println(err)
+		log.Error("msg", zap.Error(err))
+
 		return
 	}
 
-	rd.Status = http.StatusOK
-	fmt.Println(rd)
-}
-
-// getpwd returns the present working directory
-func getpwd() string {
-	pwd, err := os.Getwd()
-	if err != nil {
-		log.Fatal(err)
-	}
-	return pwd
-}
-
-// homeDir returns the home directory of the user
-// who executed simle-httpd
-func homeDir() string {
-	u, err := user.Current()
-	if err != nil {
-		return ""
-	}
-	return u.HomeDir
+	log.Info("request",
+		zap.String("method", req.Method),
+		zap.String("remote_addr", req.RemoteAddr),
+		zap.String("path", req.RequestURI),
+		zap.String("user_agent", req.UserAgent()),
+		zap.Int("status", http.StatusOK))
 }
 
 const usage = `version: %s
 
-Usage: simple-httpd [-p port] [-l domain]
+Usage: %[2]s [-p port] [-e domain]
 
 Options:
-  -h            this help
-  -v            show version and exit
-  -g            enable TLS/HTTPS generate and use a self signed certificate
-  -p port       bind HTTP port (default: 8000)
-  -l domain     enable TLS/HTTPS with Let's Encrypt for the given domain name.
-  -c path       enable TLS/HTTPS use a predefined HTTPS certificate
-  -t port       bind HTTPS port (default: 443, 4433 for -g)
+    -h            help
+    -v            show version and exit
+    -g            enable TLS/HTTPS generate and use a self signed certificate
+    -p port       bind HTTP port (default: 8000)
+    -e domain     enable TLS/HTTPS with Let's Encrypt for the given domain name
+    -c path       enable TLS/HTTPS with a predefined HTTPS certificate
+    -t port       bind HTTPS port (default: 443, 4433 for -g)
+    -l lang       language code (ISO 639-1) to for UI. (default: en)
 
 Examples: 
-  simple-httpd                        start server. http://localhost:8000
-  simple-httpd -p 80                  use HTTP port 80. http://localhost
-  simple-httpd -g                     enable HTTPS generated certificate. https://localhost:4433
-  simple-httpd -p 80 -l example.com   enable HTTPS with Let's Encrypt. https://example.com
+    %[2]s                        start server. http://localhost:8000
+    %[2]s -p 80                  use HTTP port 80. http://localhost
+    %[2]s -g                     enable HTTPS generated certificate. https://localhost:4433
+    %[2]s -p 80 -e example.com   enable HTTPS with Let's Encrypt. https://example.com
 `
 
-const warmUpDelay = 10
+const warmUpDelay = time.Millisecond * 10
+
+var (
+	port    int
+	le      string
+	gs      bool
+	tlsPort int
+	tlsCert string
+	vers    bool
+	lang    string
+)
+
+var log *zap.Logger
+
+// setDirectoryText sets the text for the directory listing.
+func setDirectoryText(alng string) error {
+	switch lang {
+	case "it":
+		directoryText = "L'elenco di directory per"
+	case "es":
+		directoryText = "Listado de directorio para"
+	case "ga":
+		directoryText = "Comhadlann liostú do"
+	case "en", "":
+		directoryText = "Directory listing for"
+	default:
+		return fmt.Errorf("error: invalid language: %s", lang)
+	}
+	return nil
+}
 
 func main() {
-	var port int
-	var le string
-	var gs bool
-	var tlsPort int
-	var tlsCert string
-	var vers bool
-	pwd := getpwd()
+	var err error
+	log, err = zap.NewProduction()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer log.Sync()
+
+	pwd, err := os.Getwd()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	flag.Usage = func() {
 		w := os.Stderr
@@ -306,21 +335,23 @@ func main() {
 				break
 			}
 		}
-		fmt.Fprintf(w, usage, version)
+		fmt.Fprintf(w, usage, version, name)
 	}
 
 	flag.BoolVar(&vers, "v", false, "")
-	flag.IntVar(&port, "p", 8000, "")
-	flag.StringVar(&le, "l", "", "")
+	flag.IntVar(&port, "p", defaultPort, "")
+	flag.StringVar(&le, "e", "", "")
 	flag.StringVar(&tlsCert, "c", "", "")
 	flag.BoolVar(&gs, "g", false, "")
 	flag.IntVar(&tlsPort, "t", -1, "")
+	flag.StringVar(&lang, "l", "en", "")
 	flag.Parse()
 
 	if vers {
-		fmt.Fprintf(os.Stdout, "version: %s\n", version)
+		fmt.Fprintf(os.Stdout, "version: %s - git sha: %s\n", version, gitSHA)
 		return
 	}
+
 	if tlsPort == -1 {
 		if gs {
 			tlsPort = 4433
@@ -328,6 +359,12 @@ func main() {
 			tlsPort = 443
 		}
 	}
+
+	if err := setDirectoryText(lang); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
 	h := &httpServer{
 		Port:      port,
 		TLSPort:   tlsPort,
@@ -337,34 +374,51 @@ func main() {
 
 	if le != "" || tlsCert != "" || gs {
 		h.HTTPS = true
+
 		var tlsServer *http.Server
-		var certPath, keyPath string
+		var certPath string
+		var keyPath string
+
+		u, err := user.Current()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
 		switch {
 		case tlsCert != "":
 			if gs {
-				log.Fatal("cannot specify both -tls-cert and -g")
+				fmt.Println(errors.New("cannot specify both -tls-cert and -g"))
+				os.Exit(1)
 			}
 			certPath, keyPath = tlsCert, tlsCert // assume a single PEM format
 		case gs:
-			hd := homeDir()
+			hd := u.HomeDir
 			certPath = filepath.Join(hd, certDir, cert)
 			keyPath = filepath.Join(hd, certDir, key)
 			if err := generateCertificates(certPath, keyPath); err != nil {
-				log.Fatalln(err)
+				fmt.Println(err)
+				os.Exit(1)
 			}
 		default:
 			if tlsPort != 443 {
-				log.Fatal("invalid -tls-port. It must be 443 when LetsEncrypt is specified.")
+				fmt.Printf("invalid -tls-port %d. It must be 443 when LetsEncrypt is specified\n", tlsPort)
+				os.Exit(1)
 			}
-			cacheDir := filepath.Join(homeDir(), certDir)
+
+			cacheDir := filepath.Join(u.HomeDir, certDir)
+
 			if err := os.MkdirAll(cacheDir, 0700); err != nil {
-				log.Fatalf("could not create cache directory: %s" + err.Error())
+				fmt.Printf("could not create cache directory: %s\n", cacheDir)
+				os.Exit(1)
 			}
+
 			certManager := autocert.Manager{
 				Cache:      autocert.DirCache(cacheDir),
 				Prompt:     autocert.AcceptTOS,
 				HostPolicy: autocert.HostWhitelist(le),
 			}
+
 			tlsServer = &http.Server{
 				Addr: fmt.Sprintf(":%d", tlsPort),
 				TLSConfig: &tls.Config{
@@ -373,6 +427,7 @@ func main() {
 				Handler: h,
 			}
 		}
+
 		go func() {
 			var err error
 			if tlsServer == nil {
@@ -381,26 +436,28 @@ func main() {
 				err = tlsServer.ListenAndServeTLS("", "")
 			}
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal("msg", zap.Error(err))
 			}
 		}()
-		time.Sleep(time.Millisecond * warmUpDelay) // give a little warmup time to the TLS
-		fmt.Printf("Serving HTTP on 0.0.0.0 port %v, HTTPS on port %v...\n", h.Port, tlsPort)
+
+		time.Sleep(warmUpDelay) // give a little warmup time to the TLS
+		log.Info("msg", zap.String("Serving HTTP on", "0.0.0.0"), zap.Int("port", h.Port), zap.Int("https", tlsPort))
 	} else {
 		go func() {
-			time.Sleep(time.Millisecond * warmUpDelay) // give a little warmup time to the HTTP
-			fmt.Printf("Serving HTTP on 0.0.0.0 port %v ...\n", h.Port)
+			time.Sleep(warmUpDelay) // give a little warmup time to the HTTP
+			log.Info("msg", zap.String("Serving HTTP on", "0.0.0.0"), zap.Int("port", h.Port))
 		}()
 	}
-	log.Fatal(http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", port), h))
+
+	log.Fatal("msg", zap.Error(http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", port), h)))
 }
 
 const htmlTemplate = `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{.lang}}">
   <head>
     <meta charset="utf-8">
-    <title>simple-httpd</title>
+    <title>{{.name}}</title>
 	<style>
 		table, td {
     	border: 1px;
@@ -408,7 +465,7 @@ const htmlTemplate = `
 	</style>
   </head>
   <body>
-    <h2>Directory listing for {{.relativePath}}</h2>
+    <h2>{{.directoryText}} {{.relativePath}}</h2>
 	<hr>
     <table>
 	  <tr>
@@ -432,6 +489,6 @@ const htmlTemplate = `
   </body>
   <hr>
   <footer>
-    <p>simple-httpd - {{.version}} / {{.goVersion}}</p>
+	<p>{{.name}} {{.version}} - {{.gitSha}} / {{.goVersion}}</p>
   </footer>
 </html>`
