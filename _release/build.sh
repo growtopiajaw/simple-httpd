@@ -4,7 +4,7 @@
 # Source: https://www.digitalocean.com/community/tutorials/how-to-build-go-executables-for-multiple-platforms-on-ubuntu-16-04
 # Modified to suit simple-httpd’s release flow
 
-package="github.com/growtopiajaw/simple-httpd"
+package="github.com/GrowtopiaJaw/simple-httpd"
 package_split=(${package//\// })
 package_name=${package_split[-1]}
 
