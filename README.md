@@ -66,6 +66,7 @@ Run server in Spanish
 
 ```
 simple-httpd -l es
+```
 
 ### Downloads
  Check our [releases](https://github.com/GrowtopiaJaw/simple-httpd/releases) section.

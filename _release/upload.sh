@@ -26,7 +26,7 @@ EOF
 githubrelease --github-token $gjaw_token --progress release GrowtopiaJaw/simple-httpd create --name $simple_httpd_tag --body "$(description)" --publish $simple_httpd_tag
 
 # Grab application version
-VERSION="$(./simple-httpd-linux-amd64 version | awk 'NR==1 {print $2}')"
+VERSION="$(echo $simple_httpd_tag | sed 's/v//g')"
 
 declare -a filenames
 filenames=(
