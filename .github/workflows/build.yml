@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [ masters ]
+    branches: [ master ]
 
 concurrency:
   group: ${{ github.ref }}
@@ -26,6 +26,6 @@ jobs:
           pip3 install githubrelease
           pip3 install click==7.1.2
           pushd _release
-          export simple_httpd_tag=v0.2.2
-          export ordinal_release=Second
+          export simple_httpd_tag=v0.2.3
+          export ordinal_release=Third
           bash upload.sh

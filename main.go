@@ -23,20 +23,14 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
-var (
-	name    string
-	version string
-	// gitSHA is populated at build time from
-	// `-ldflags "-X main.gitSHA=$(shell git rev-parse HEAD)"`
-	gitSHA string
-)
-
 var indexHTMLFiles = []string{
 	"index.html",
 	"index.htm",
 }
 
 const (
+	name = simple-httpd
+	version = 0.2.3
 	cert    = "cert.pem"
 	key     = "key.pem"
 	certDir = ".autocert"
@@ -217,7 +211,6 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 		if err := h.template.Execute(w, map[string]interface{}{
 			"files":           files,
-			"gitSha":          gitSHA,
 			"version":         version,
 			"port":            h.Port,
 			"relativePath":    fullpath,
@@ -348,7 +341,7 @@ func main() {
 	flag.Parse()
 
 	if vers {
-		fmt.Fprintf(os.Stdout, "version: %s - git sha: %s\n", version, gitSHA)
+		fmt.Fprintf(os.Stdout, "version: %s\n", version)
 		return
 	}
 
@@ -489,6 +482,6 @@ const htmlTemplate = `
   </body>
   <hr>
   <footer>
-	<p>{{.name}} {{.version}} - {{.gitSha}} / {{.goVersion}}</p>
+	<p>{{.name}} - {{.version}} / {{.goVersion}}</p>
   </footer>
 </html>`
