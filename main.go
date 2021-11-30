@@ -29,8 +29,8 @@ var indexHTMLFiles = []string{
 }
 
 const (
-	name = simple-httpd
-	version = 0.2.3
+	name = "simple-httpd"
+	version = "0.2.3"
 	cert    = "cert.pem"
 	key     = "key.pem"
 	certDir = ".autocert"
