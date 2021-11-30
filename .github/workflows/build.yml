@@ -14,8 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: |
-          git config user.name Growtopia Jaw
-          git config user.email growtopiajaw@gmail.com
           cd _release
           go install github.com/karalabe/xgo
           bash build.sh
@@ -38,22 +36,6 @@ jobs:
           lsb_release -a
           uname -a
 
-#      - name: Set release date
-#        id: release_date
-#        shell: bash
-#        run: |
-#          r="$(date +'%Y-%m-%d_%H-%M-%S_%Z')"
-#          echo "::set-output name=RELEASE_TAG::$r"
-
-#      - name: Upload binaries to GitHub Release
-#        uses: svenstaro/upload-release-action@v2
-#        with:
-#          repo_name: growtopiajaw/stash
-#          file: _release/simple-httpd-*
-#          repo_token: ${{ secrets.GITHUB_TOKEN }}
-#          tag: ${{ steps.release_date.outputs.RELEASE_TAG }}
-#          file_glob: true
-
       - name: Update README.md
         env:
           gjaw_token: ${{ secrets.GJAW_TOKEN }}
@@ -63,5 +45,4 @@ jobs:
           cd _release
           export simple_httpd_tag=v0.2.2
           export ordinal_release=Second
-          githubrelease --github-token $gjaw_token --progress release growtopiajaw/simple-httpd create "$simple_httpd_tag" simple-httpd-*
-          #bash upload.sh
+          bash upload.sh
