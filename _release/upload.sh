@@ -4,15 +4,15 @@
 # Source: https://github.com/prasmussen/gdrive/raw/master/_release/upload.sh
 # Modified to suit simple-httpd's release flow
 
-githubrelease --github-token $gjaw_token --progress ref GrowtopiaJaw/simple-httpd list | awk '/\/v/'
-echo
-echo -e "These are all the releases that have been published to GitHub"
-echo -e "Please specify your next release tag"
-read -p ": " simple_httpd_tag
-githubrelease --github-token $gjaw_token --progress release GrowtopiaJaw/simple-httpd debug v"$(latest_version)" | awk '/body/ {print $2}' | sed "s/'//g"
-echo -e "This is the latest ordinal release that has been published to GitHub"
-echo -e "Please specify your next ordinal release"
-read -p ": " ordinal_release
+#githubrelease --github-token $gjaw_token --progress ref GrowtopiaJaw/simple-httpd list | awk '/\/v/'
+#echo
+#echo -e "These are all the releases that have been published to GitHub"
+#echo -e "Please specify your next release tag"
+#read -p ": " simple_httpd_tag
+#githubrelease --github-token $gjaw_token --progress release GrowtopiaJaw/simple-httpd debug v"$(latest_version)" | awk '/body/ {print $2}' | sed "s/'//g"
+#echo -e "This is the latest ordinal release that has been published to GitHub"
+#echo -e "Please specify your next ordinal release"
+#read -p ": " ordinal_release
 
 git_root=$(git rev-parse --show-toplevel)
 
@@ -25,8 +25,11 @@ function description() {
 $ordinal_release release
 - All possible binaries are built using [xgo](https://github.com/karalabe/xgo) and golang’s built in cross compile support although, they are not tested, YMMV
 - So far, these are the only binaries that I’ve personally tested and is known to work
-  * simple-httpd-linux-amd64 (Ubuntu 18.04.5 LTS)
-  * simple-httpd-ios-5.0-arm64 (Apple iPhone 6)
+  * simple-httpd-linux-amd64 (Ubuntu 18.04.5 LTS, Debian 11.0 Unstable)
+  * simple-httpd-ios-5.0-arm64 (Apple iPhone 6, Apple iPhone 7)
+  * simple-httpd-darwin-amd64 (macOS Catalina 10.15.7, macOS Big Sur 11.6)
+  * simple-httpd-windows-amd64.exe (Windows 7 Ultimate, Windows 10 Pro)
+  * simple-httpd-android-16-arm (Android 5.1.1, Android 6.0.1, Android 7.1.1, Android 8.1.0)
 EOF
 }
 
