@@ -17,7 +17,7 @@ jobs:
           git config user.name Growtopia Jaw
           git config user.email growtopiajaw@gmail.com
           cd _release
-          go install github.com/karalabe/xgo@latest
+          go install github.com/karalabe/xgo
           bash build.sh
 
       - name: Get system storage space
