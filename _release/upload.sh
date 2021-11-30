@@ -4,17 +4,7 @@
 # Source: https://github.com/prasmussen/gdrive/raw/master/_release/upload.sh
 # Modified to suit simple-httpd's release flow
 
-#githubrelease --github-token $gjaw_token --progress ref GrowtopiaJaw/simple-httpd list | awk '/\/v/'
-#echo
-#echo -e "These are all the releases that have been published to GitHub"
-#echo -e "Please specify your next release tag"
-#read -p ": " simple_httpd_tag
-#githubrelease --github-token $gjaw_token --progress release GrowtopiaJaw/simple-httpd debug v"$(latest_version)" | awk '/body/ {print $2}' | sed "s/'//g"
-#echo -e "This is the latest ordinal release that has been published to GitHub"
-#echo -e "Please specify your next ordinal release"
-#read -p ": " ordinal_release
-
-git_root=$(git rev-parse --show-toplevel)
+git_root="$(git rev-parse --show-toplevel)"
 
 function latest_version() {
     cat $git_root/README.md | awk '/simple-httpd-aix-ppc64/ {print $4}'
@@ -36,7 +26,7 @@ EOF
 githubrelease --github-token $gjaw_token --progress release GrowtopiaJaw/simple-httpd create --name $simple_httpd_tag --body "$(description)" --publish $simple_httpd_tag
 
 # Grab application version
-VERSION=$(./simple-httpd-linux-amd64 version | awk 'NR==1 {print $2}')
+VERSION="$(./simple-httpd-linux-amd64 version | awk 'NR==1 {print $2}')"
 
 declare -a filenames
 filenames=(
@@ -156,7 +146,7 @@ for name in ${filenames[@]}; do
     bin_path="$name"
 
     # Upload file
-    url=$(githubrelease --github-token $gjaw_token --progress asset GrowtopiaJaw/simple-httpd upload $simple_httpd_tag $bin_path | awk '/https/ {print $2}')
+    url="$(githubrelease --github-token $gjaw_token --progress asset GrowtopiaJaw/simple-httpd upload $simple_httpd_tag $bin_path | awk '/https/ {print $2}')"
 
     # Shasum
     sha="$(shasum -b $bin_path | awk '{print $1}')"

@@ -14,27 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: |
-          cd _release
+          pushd _release
           go install github.com/karalabe/xgo
           bash build.sh
-          cd ..
-
-      - name: Get system storage space
-        run: |
-          df -h
-          lsblk
-          blkid
-
-      - name: Run neofetch
-        run: |
-          wget https://github.com/dylanaraps/neofetch/raw/master/neofetch
-          bash neofetch
-
-      - name: Get cpuinfo
-        run: |
-          cat /proc/cpuinfo
-          lsb_release -a
-          uname -a
+          popd
 
       - name: Update README.md
         env:
@@ -42,7 +25,9 @@ jobs:
         run: |
           pip3 install githubrelease
           pip3 install click==7.1.2
-          cd _release
+          pip3 install speedtest-cli
+          speedtest-cli
+          pushd _release
           export simple_httpd_tag=v0.2.2
           export ordinal_release=Second
           bash upload.sh
